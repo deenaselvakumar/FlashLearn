@@ -36,46 +36,13 @@ export function FlashcardStudy({ flashcards, onExit }: FlashcardStudyProps) {
   const [startTime, setStartTime] = useState<number>(Date.now())
   const [sessionStartTime] = useState<number>(Date.now())
   const [isComplete, setIsComplete] = useState(false)
-  const [isFlipping, setIsFlipping] = useState(false)
-  const [flipDirection, setFlipDirection] = useState<"left" | "right">("right")
 
-  // Filter out intro/content slides (typically slide 1 or slides with generic content)
-  const filteredFlashcards = flashcards.filter((card) => {
-    const question = card.question.toLowerCase()
-    const answer = card.answer.toLowerCase()
-
-    // Skip slides that contain intro/overview content
-    const skipKeywords = [
-      "introduction",
-      "overview",
-      "agenda",
-      "outline",
-      "table of contents",
-      "welcome",
-      "getting started",
-      "about this",
-      "course overview",
-    ]
-
-    return (
-      !skipKeywords.some((keyword) => question.includes(keyword) || answer.includes(keyword)) && card.slideSource > 1
-    ) // Skip first slide
-  })
-
-  const currentCard = filteredFlashcards[currentIndex]
-  const progress = ((currentIndex + 1) / filteredFlashcards.length) * 100
+  const currentCard = flashcards[currentIndex]
+  const progress = ((currentIndex + 1) / flashcards.length) * 100
 
   useEffect(() => {
     setStartTime(Date.now())
   }, [currentIndex])
-
-  const handleFlip = () => {
-    setIsFlipping(true)
-    setTimeout(() => {
-      setShowAnswer(!showAnswer)
-      setIsFlipping(false)
-    }, 150)
-  }
 
   const handleResponse = (response: "correct" | "incorrect" | "review") => {
     const timeSpent = Date.now() - startTime
@@ -103,8 +70,7 @@ export function FlashcardStudy({ flashcards, onExit }: FlashcardStudyProps) {
 
     // Auto-advance after a short delay
     setTimeout(() => {
-      if (currentIndex < filteredFlashcards.length - 1) {
-        setFlipDirection("right")
+      if (currentIndex < flashcards.length - 1) {
         setCurrentIndex(currentIndex + 1)
         setShowAnswer(false)
       } else {
@@ -114,26 +80,16 @@ export function FlashcardStudy({ flashcards, onExit }: FlashcardStudyProps) {
   }
 
   const nextCard = () => {
-    if (currentIndex < filteredFlashcards.length - 1) {
-      setFlipDirection("right")
-      setIsFlipping(true)
-      setTimeout(() => {
-        setCurrentIndex(currentIndex + 1)
-        setShowAnswer(false)
-        setIsFlipping(false)
-      }, 150)
+    if (currentIndex < flashcards.length - 1) {
+      setCurrentIndex(currentIndex + 1)
+      setShowAnswer(false)
     }
   }
 
   const prevCard = () => {
     if (currentIndex > 0) {
-      setFlipDirection("left")
-      setIsFlipping(true)
-      setTimeout(() => {
-        setCurrentIndex(currentIndex - 1)
-        setShowAnswer(false)
-        setIsFlipping(false)
-      }, 150)
+      setCurrentIndex(currentIndex - 1)
+      setShowAnswer(false)
     }
   }
 
@@ -197,7 +153,7 @@ export function FlashcardStudy({ flashcards, onExit }: FlashcardStudyProps) {
             </div>
             <div className="flex items-center gap-1">
               <Brain className="h-4 w-4" />
-              <span>Avg per card: {Math.round(stats.totalTime / filteredFlashcards.length)}s</span>
+              <span>Avg per card: {Math.round(stats.totalTime / flashcards.length)}s</span>
             </div>
           </div>
 
@@ -207,7 +163,7 @@ export function FlashcardStudy({ flashcards, onExit }: FlashcardStudyProps) {
             {Object.entries(
               studySession.reduce(
                 (acc, session) => {
-                  const card = filteredFlashcards.find((c) => c.id === session.cardId)
+                  const card = flashcards.find((c) => c.id === session.cardId)
                   if (card) {
                     if (!acc[card.topic]) {
                       acc[card.topic] = { correct: 0, total: 0 }
@@ -256,7 +212,7 @@ export function FlashcardStudy({ flashcards, onExit }: FlashcardStudyProps) {
                 setStudySession([])
                 setIsComplete(false)
               }}
-              className="flex-1 bg-purple-600 hover:bg-purple-700"
+              className="flex-1 bg-orange-600 hover:bg-orange-700"
             >
               <RotateCcw className="mr-2 h-4 w-4" />
               Study Again
@@ -267,29 +223,12 @@ export function FlashcardStudy({ flashcards, onExit }: FlashcardStudyProps) {
     )
   }
 
-  if (!currentCard) {
-    return (
-      <Card className="max-w-2xl mx-auto">
-        <CardHeader>
-          <CardTitle>No Flashcards Available</CardTitle>
-          <CardDescription>No valid flashcards found after filtering intro slides.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button onClick={onExit} variant="outline">
-            <Home className="mr-2 h-4 w-4" />
-            Back to Editor
-          </Button>
-        </CardContent>
-      </Card>
-    )
-  }
-
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">FlashLearn Study Mode</h1>
+          <h1 className="text-2xl font-bold">Study Mode</h1>
           <p className="text-muted-foreground">Review your flashcards and track your progress</p>
         </div>
         <Button onClick={onExit} variant="outline">
@@ -304,89 +243,78 @@ export function FlashcardStudy({ flashcards, onExit }: FlashcardStudyProps) {
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium">Progress</span>
             <span className="text-sm text-muted-foreground">
-              {currentIndex + 1} of {filteredFlashcards.length}
+              {currentIndex + 1} of {flashcards.length}
             </span>
           </div>
           <Progress value={progress} className="h-2" />
         </CardContent>
       </Card>
 
-      {/* Animated Flashcard */}
-      <div className="perspective-1000">
-        <Card
-          className={`min-h-[500px] transition-all duration-300 transform-style-preserve-3d cursor-pointer ${
-            isFlipping ? (flipDirection === "right" ? "rotate-y-180" : "-rotate-y-180") : ""
-          }`}
-          onClick={handleFlip}
-        >
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">Slide {currentCard.slideSource}</Badge>
-                <Badge variant="secondary">{currentCard.topic}</Badge>
-                <Badge
-                  variant={
-                    currentCard.difficulty === "Easy"
-                      ? "default"
-                      : currentCard.difficulty === "Medium"
-                        ? "secondary"
-                        : "destructive"
-                  }
-                >
-                  {currentCard.difficulty}
-                </Badge>
-                <Badge variant="outline">{currentCard.type}</Badge>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    speakText(showAnswer ? currentCard.answer : currentCard.question)
-                  }}
-                >
-                  <Volume2 className="h-4 w-4" />
-                </Button>
-              </div>
+      {/* Flashcard */}
+      <Card className="min-h-[500px]">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">Slide {currentCard.slideSource}</Badge>
+              <Badge variant="secondary">{currentCard.topic}</Badge>
+              <Badge
+                variant={
+                  currentCard.difficulty === "Easy"
+                    ? "default"
+                    : currentCard.difficulty === "Medium"
+                      ? "secondary"
+                      : "destructive"
+                }
+              >
+                {currentCard.difficulty}
+              </Badge>
+              <Badge variant="outline">{currentCard.type}</Badge>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="text-center space-y-6">
-              <div className="text-lg font-medium text-muted-foreground">{showAnswer ? "Answer" : "Question"}</div>
-              <div className="text-xl font-semibold min-h-[150px] flex items-center justify-center p-8 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-950 dark:to-blue-950 rounded-lg border-2 border-dashed border-purple-200 dark:border-purple-800">
-                {showAnswer ? currentCard.answer : currentCard.question}
-              </div>
-              <div className="text-sm text-muted-foreground">Click card to flip • Use navigation buttons to move</div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => speakText(showAnswer ? currentCard.answer : currentCard.question)}
+              >
+                <Volume2 className="h-4 w-4" />
+              </Button>
             </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="text-center space-y-6">
+            <div className="text-lg font-medium text-muted-foreground">{showAnswer ? "Answer" : "Question"}</div>
+            <div className="text-xl font-semibold min-h-[150px] flex items-center justify-center p-8 bg-muted/30 rounded-lg border-2 border-dashed">
+              {showAnswer ? currentCard.answer : currentCard.question}
+            </div>
+          </div>
 
-            {/* Action Buttons */}
-            <div className="flex justify-center">
-              {!showAnswer ? (
-                <Button onClick={handleFlip} size="lg" className="bg-purple-600 hover:bg-purple-700">
-                  <Eye className="mr-2 h-4 w-4" />
-                  Show Answer
+          {/* Action Buttons */}
+          <div className="flex justify-center">
+            {!showAnswer ? (
+              <Button onClick={() => setShowAnswer(true)} size="lg" className="bg-orange-600 hover:bg-orange-700">
+                <Eye className="mr-2 h-4 w-4" />
+                Show Answer
+              </Button>
+            ) : (
+              <div className="flex gap-3 w-full max-w-md">
+                <Button variant="destructive" onClick={() => handleResponse("incorrect")} className="flex-1">
+                  <X className="mr-2 h-4 w-4" />
+                  Incorrect
                 </Button>
-              ) : (
-                <div className="flex gap-3 w-full max-w-md">
-                  <Button variant="destructive" onClick={() => handleResponse("incorrect")} className="flex-1">
-                    <X className="mr-2 h-4 w-4" />
-                    Incorrect
-                  </Button>
-                  <Button variant="outline" onClick={() => handleResponse("review")} className="flex-1">
-                    <RotateCcw className="mr-2 h-4 w-4" />
-                    Review
-                  </Button>
-                  <Button onClick={() => handleResponse("correct")} className="flex-1 bg-green-600 hover:bg-green-700">
-                    <Check className="mr-2 h-4 w-4" />
-                    Correct
-                  </Button>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                <Button variant="outline" onClick={() => handleResponse("review")} className="flex-1">
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Review
+                </Button>
+                <Button onClick={() => handleResponse("correct")} className="flex-1 bg-green-600 hover:bg-green-700">
+                  <Check className="mr-2 h-4 w-4" />
+                  Correct
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Navigation */}
       <div className="flex justify-between">
@@ -394,7 +322,7 @@ export function FlashcardStudy({ flashcards, onExit }: FlashcardStudyProps) {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Previous
         </Button>
-        <Button variant="outline" onClick={nextCard} disabled={currentIndex === filteredFlashcards.length - 1}>
+        <Button variant="outline" onClick={nextCard} disabled={currentIndex === flashcards.length - 1}>
           Next
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
