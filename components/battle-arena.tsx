@@ -3,523 +3,472 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useAuth } from "./auth-provider"
-import { Sword, Shield, Clock, Trophy, Target, FlameIcon as Fire, CheckCircle, XCircle } from "lucide-react"
+import { useAuth } from "@/components/auth-provider"
+import { Sword, Clock, Flame, CheckCircle, XCircle } from "lucide-react"
 
-interface BattleQuestion {
+interface Question {
   id: string
   question: string
   options: string[]
   correctAnswer: number
+  difficulty: "easy" | "medium" | "hard"
   topic: string
-  difficulty: "Easy" | "Medium" | "Hard"
-  timeLimit: number // seconds
 }
 
-interface BattlePlayer {
-  id: string
-  username: string
-  avatar: string
-  score: number
-  streak: number
-  answeredQuestions: number
-  accuracy: number
+interface BattleState {
+  phase: "countdown" | "battle" | "results"
+  currentQuestion: number
+  timeLeft: number
+  playerScore: number
+  opponentScore: number
+  playerStreak: number
+  opponentStreak: number
+  playerAnswers: (number | null)[]
+  opponentAnswers: (number | null)[]
 }
 
-interface BattleArenaProps {
-  opponent: BattlePlayer
-  questions: BattleQuestion[]
-  onBattleEnd: (result: "win" | "lose" | "draw", finalScore: number) => void
-}
-
-const mockQuestions: BattleQuestion[] = [
+const mockQuestions: Question[] = [
   {
     id: "q1",
     question: "What is the derivative of x²?",
     options: ["2x", "x²", "2", "x"],
     correctAnswer: 0,
+    difficulty: "easy",
     topic: "Calculus",
-    difficulty: "Easy",
-    timeLimit: 15,
   },
   {
     id: "q2",
-    question: "What is Newton's Second Law?",
-    options: ["F = ma", "E = mc²", "F = mg", "a = v/t"],
-    correctAnswer: 0,
-    topic: "Physics",
-    difficulty: "Medium",
-    timeLimit: 20,
+    question: "Which element has the chemical symbol 'Au'?",
+    options: ["Silver", "Gold", "Aluminum", "Argon"],
+    correctAnswer: 1,
+    difficulty: "medium",
+    topic: "Chemistry",
   },
   {
     id: "q3",
-    question: "What is the chemical formula for water?",
-    options: ["H₂O", "CO₂", "NaCl", "CH₄"],
-    correctAnswer: 0,
-    topic: "Chemistry",
-    difficulty: "Easy",
-    timeLimit: 10,
+    question: "What is the time complexity of binary search?",
+    options: ["O(n)", "O(log n)", "O(n²)", "O(1)"],
+    correctAnswer: 1,
+    difficulty: "hard",
+    topic: "Computer Science",
   },
   {
     id: "q4",
-    question: "What is the integral of 2x?",
-    options: ["x²", "x² + C", "2", "2x + C"],
+    question: "Who wrote 'Romeo and Juliet'?",
+    options: ["Charles Dickens", "William Shakespeare", "Jane Austen", "Mark Twain"],
     correctAnswer: 1,
-    topic: "Calculus",
-    difficulty: "Medium",
-    timeLimit: 25,
+    difficulty: "easy",
+    topic: "Literature",
   },
   {
     id: "q5",
-    question: "What is the speed of light?",
-    options: ["3×10⁸ m/s", "3×10⁶ m/s", "3×10¹⁰ m/s", "3×10⁴ m/s"],
-    correctAnswer: 0,
-    topic: "Physics",
-    difficulty: "Hard",
-    timeLimit: 30,
+    question: "What is the capital of Australia?",
+    options: ["Sydney", "Melbourne", "Canberra", "Perth"],
+    correctAnswer: 2,
+    difficulty: "medium",
+    topic: "Geography",
   },
 ]
 
-export function BattleArena({ opponent, questions = mockQuestions, onBattleEnd }: BattleArenaProps) {
+interface BattleArenaProps {
+  opponent: string
+  onBattleEnd: (result: "win" | "lose" | "tie", stats: any) => void
+}
+
+export function BattleArena({ opponent, onBattleEnd }: BattleArenaProps) {
   const { user } = useAuth()
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [timeLeft, setTimeLeft] = useState(questions[0]?.timeLimit || 15)
+  const [battleState, setBattleState] = useState<BattleState>({
+    phase: "countdown",
+    currentQuestion: 0,
+    timeLeft: 3,
+    playerScore: 0,
+    opponentScore: 0,
+    playerStreak: 0,
+    opponentStreak: 0,
+    playerAnswers: [],
+    opponentAnswers: [],
+  })
+
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
-  const [showResult, setShowResult] = useState(false)
-  const [battlePhase, setBattlePhase] = useState<"countdown" | "battle" | "result">("countdown")
-  const [countdown, setCountdown] = useState(3)
-
-  const [playerStats, setPlayerStats] = useState<BattlePlayer>({
-    id: user?.id || "",
-    username: user?.username || "",
-    avatar: user?.avatar || "/placeholder.svg?height=40&width=40",
-    score: 0,
-    streak: 0,
-    answeredQuestions: 0,
-    accuracy: 0,
-  })
-
-  const [opponentStats, setOpponentStats] = useState<BattlePlayer>({
-    ...opponent,
-    score: 0,
-    streak: 0,
-    answeredQuestions: 0,
-    accuracy: 0,
-  })
-
-  const currentQuestion = questions[currentQuestionIndex]
-  const progress = ((currentQuestionIndex + 1) / questions.length) * 100
+  const [questionStartTime, setQuestionStartTime] = useState<number>(0)
 
   // Countdown timer
   useEffect(() => {
-    if (battlePhase === "countdown" && countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000)
+    if (battleState.phase === "countdown" && battleState.timeLeft > 0) {
+      const timer = setTimeout(() => {
+        setBattleState((prev) => ({ ...prev, timeLeft: prev.timeLeft - 1 }))
+      }, 1000)
       return () => clearTimeout(timer)
-    } else if (battlePhase === "countdown" && countdown === 0) {
-      setBattlePhase("battle")
-      setTimeLeft(currentQuestion?.timeLimit || 15)
+    } else if (battleState.phase === "countdown" && battleState.timeLeft === 0) {
+      setBattleState((prev) => ({
+        ...prev,
+        phase: "battle",
+        timeLeft: 15,
+        playerAnswers: new Array(mockQuestions.length).fill(null),
+        opponentAnswers: new Array(mockQuestions.length).fill(null),
+      }))
+      setQuestionStartTime(Date.now())
     }
-  }, [countdown, battlePhase, currentQuestion])
+  }, [battleState.phase, battleState.timeLeft])
 
-  // Question timer
+  // Battle timer
   useEffect(() => {
-    if (battlePhase === "battle" && timeLeft > 0 && !showResult) {
-      const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000)
+    if (battleState.phase === "battle" && battleState.timeLeft > 0) {
+      const timer = setTimeout(() => {
+        setBattleState((prev) => ({ ...prev, timeLeft: prev.timeLeft - 1 }))
+      }, 1000)
       return () => clearTimeout(timer)
-    } else if (battlePhase === "battle" && timeLeft === 0 && !showResult) {
-      handleAnswer(null) // Time's up
+    } else if (battleState.phase === "battle" && battleState.timeLeft === 0) {
+      handleTimeUp()
     }
-  }, [timeLeft, battlePhase, showResult])
+  }, [battleState.phase, battleState.timeLeft])
 
   // Simulate opponent answers
   useEffect(() => {
-    if (battlePhase === "battle" && !showResult) {
-      const opponentDelay = Math.random() * (currentQuestion?.timeLimit * 0.8) * 1000
-      const timer = setTimeout(() => {
-        const isCorrect = Math.random() > 0.3 // 70% chance opponent gets it right
-        const opponentAnswer = isCorrect
-          ? currentQuestion.correctAnswer
-          : Math.floor(Math.random() * currentQuestion.options.length)
-
-        setOpponentStats((prev) => ({
-          ...prev,
-          answeredQuestions: prev.answeredQuestions + 1,
-          score: prev.score + (isCorrect ? getQuestionPoints(currentQuestion.difficulty) : 0),
-          streak: isCorrect ? prev.streak + 1 : 0,
-          accuracy: Math.round((prev.score / getQuestionPoints("Easy") / (prev.answeredQuestions + 1)) * 100),
-        }))
-      }, opponentDelay)
-
+    if (battleState.phase === "battle") {
+      const timer = setTimeout(
+        () => {
+          simulateOpponentAnswer()
+        },
+        Math.random() * 8000 + 2000,
+      ) // Random delay between 2-10 seconds
       return () => clearTimeout(timer)
     }
-  }, [currentQuestionIndex, battlePhase, showResult])
+  }, [battleState.currentQuestion, battleState.phase])
 
-  const getQuestionPoints = (difficulty: string) => {
-    switch (difficulty) {
-      case "Easy":
-        return 10
-      case "Medium":
-        return 20
-      case "Hard":
-        return 30
-      default:
-        return 10
-    }
+  const simulateOpponentAnswer = () => {
+    const currentQ = mockQuestions[battleState.currentQuestion]
+    const isCorrect = Math.random() > 0.3 // 70% chance of correct answer
+    const answerIndex = isCorrect ? currentQ.correctAnswer : Math.floor(Math.random() * currentQ.options.length)
+
+    setBattleState((prev) => {
+      const newOpponentAnswers = [...prev.opponentAnswers]
+      newOpponentAnswers[prev.currentQuestion] = answerIndex
+
+      const points = isCorrect ? getPoints(currentQ.difficulty, 10) : 0
+      const newStreak = isCorrect ? prev.opponentStreak + 1 : 0
+
+      return {
+        ...prev,
+        opponentAnswers: newOpponentAnswers,
+        opponentScore: prev.opponentScore + points,
+        opponentStreak: newStreak,
+      }
+    })
   }
 
-  const handleAnswer = (answerIndex: number | null) => {
-    if (showResult) return
+  const getPoints = (difficulty: string, timeBonus = 0) => {
+    const basePoints = {
+      easy: 10,
+      medium: 20,
+      hard: 30,
+    }
+    return basePoints[difficulty as keyof typeof basePoints] + Math.floor(timeBonus / 2)
+  }
+
+  const handleAnswerSelect = (answerIndex: number) => {
+    if (selectedAnswer !== null) return
 
     setSelectedAnswer(answerIndex)
-    setShowResult(true)
+    const responseTime = Date.now() - questionStartTime
+    const timeBonus = Math.max(0, 15 - Math.floor(responseTime / 1000))
 
-    const isCorrect = answerIndex === currentQuestion.correctAnswer
-    const points = isCorrect ? getQuestionPoints(currentQuestion.difficulty) : 0
-    const timeBonus = Math.max(0, Math.floor(timeLeft / 2)) // Bonus points for speed
+    const currentQ = mockQuestions[battleState.currentQuestion]
+    const isCorrect = answerIndex === currentQ.correctAnswer
+    const points = isCorrect ? getPoints(currentQ.difficulty, timeBonus) : 0
 
-    setPlayerStats((prev) => ({
-      ...prev,
-      answeredQuestions: prev.answeredQuestions + 1,
-      score: prev.score + points + timeBonus,
-      streak: isCorrect ? prev.streak + 1 : 0,
-      accuracy: Math.round(((prev.score + points) / (getQuestionPoints("Easy") * (prev.answeredQuestions + 1))) * 100),
-    }))
+    setBattleState((prev) => {
+      const newPlayerAnswers = [...prev.playerAnswers]
+      newPlayerAnswers[prev.currentQuestion] = answerIndex
 
-    // Move to next question after showing result
+      const newStreak = isCorrect ? prev.playerStreak + 1 : 0
+
+      return {
+        ...prev,
+        playerAnswers: newPlayerAnswers,
+        playerScore: prev.playerScore + points,
+        playerStreak: newStreak,
+      }
+    })
+
+    // Move to next question after 2 seconds
     setTimeout(() => {
-      if (currentQuestionIndex < questions.length - 1) {
-        setCurrentQuestionIndex(currentQuestionIndex + 1)
+      if (battleState.currentQuestion < mockQuestions.length - 1) {
+        setBattleState((prev) => ({
+          ...prev,
+          currentQuestion: prev.currentQuestion + 1,
+          timeLeft: 15,
+        }))
         setSelectedAnswer(null)
-        setShowResult(false)
-        setTimeLeft(questions[currentQuestionIndex + 1]?.timeLimit || 15)
+        setQuestionStartTime(Date.now())
       } else {
-        // Battle ended
-        setBattlePhase("result")
-        const finalResult =
-          playerStats.score > opponentStats.score ? "win" : playerStats.score < opponentStats.score ? "lose" : "draw"
-        onBattleEnd(finalResult, playerStats.score)
+        endBattle()
       }
     }, 2000)
   }
 
-  if (battlePhase === "countdown") {
+  const handleTimeUp = () => {
+    if (battleState.currentQuestion < mockQuestions.length - 1) {
+      setBattleState((prev) => ({
+        ...prev,
+        currentQuestion: prev.currentQuestion + 1,
+        timeLeft: 15,
+        playerStreak: 0,
+      }))
+      setSelectedAnswer(null)
+      setQuestionStartTime(Date.now())
+    } else {
+      endBattle()
+    }
+  }
+
+  const endBattle = () => {
+    setBattleState((prev) => ({ ...prev, phase: "results" }))
+
+    const result =
+      battleState.playerScore > battleState.opponentScore
+        ? "win"
+        : battleState.playerScore < battleState.opponentScore
+          ? "lose"
+          : "tie"
+
+    const stats = {
+      playerScore: battleState.playerScore,
+      opponentScore: battleState.opponentScore,
+      accuracy:
+        (battleState.playerAnswers.filter((answer, index) => answer === mockQuestions[index]?.correctAnswer).length /
+          mockQuestions.length) *
+        100,
+      questionsAnswered: battleState.playerAnswers.filter((answer) => answer !== null).length,
+    }
+
+    setTimeout(() => {
+      onBattleEnd(result, stats)
+    }, 5000)
+  }
+
+  const currentQuestion = mockQuestions[battleState.currentQuestion]
+
+  if (battleState.phase === "countdown") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-red-50 dark:from-gray-900 dark:to-gray-800">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-6">
-            <div className="space-y-6">
-              <div className="flex justify-center items-center gap-4">
-                <div className="text-center">
-                  <Avatar className="h-16 w-16 mx-auto mb-2">
-                    <AvatarImage src={playerStats.avatar || "/placeholder.svg"} />
-                    <AvatarFallback>{playerStats.username[0].toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                  <div className="font-medium">{playerStats.username}</div>
-                </div>
-                <Sword className="h-8 w-8 text-orange-600" />
-                <div className="text-center">
-                  <Avatar className="h-16 w-16 mx-auto mb-2">
-                    <AvatarImage src={opponentStats.avatar || "/placeholder.svg"} />
-                    <AvatarFallback>{opponentStats.username[0].toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                  <div className="font-medium">{opponentStats.username}</div>
-                </div>
-              </div>
-
-              <div className="text-6xl font-bold text-orange-600">{countdown || "GO!"}</div>
-
-              <div className="text-muted-foreground">Battle starting in {countdown} seconds...</div>
+      <Card className="w-full max-w-2xl mx-auto">
+        <CardContent className="flex flex-col items-center justify-center py-12">
+          <div className="text-8xl font-bold text-orange-600 mb-4">{battleState.timeLeft || "GO!"}</div>
+          <h2 className="text-2xl font-bold mb-2">Battle Starting!</h2>
+          <p className="text-muted-foreground text-center">Get ready to face {opponent} in an epic flashcard battle!</p>
+          <div className="flex items-center gap-8 mt-8">
+            <div className="flex items-center gap-2">
+              <Avatar>
+                <AvatarImage src={user?.avatar || "/placeholder.svg"} />
+                <AvatarFallback>{user?.username[0].toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <span className="font-medium">{user?.username}</span>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Sword className="h-8 w-8 text-orange-600" />
+            <div className="flex items-center gap-2">
+              <Avatar>
+                <AvatarImage src="/placeholder.svg?height=40&width=40" />
+                <AvatarFallback>{opponent[0].toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <span className="font-medium">{opponent}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
-  if (battlePhase === "result") {
-    const playerWon = playerStats.score > opponentStats.score
-    const isDraw = playerStats.score === opponentStats.score
+  if (battleState.phase === "results") {
+    const result =
+      battleState.playerScore > battleState.opponentScore
+        ? "win"
+        : battleState.playerScore < battleState.opponentScore
+          ? "lose"
+          : "tie"
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 dark:from-gray-900 dark:to-gray-800">
-        <Card className="w-full max-w-2xl">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl flex items-center justify-center gap-2">
-              {isDraw ? (
-                <>
-                  <Shield className="h-6 w-6 text-blue-600" />
-                  It's a Draw!
-                </>
-              ) : playerWon ? (
-                <>
-                  <Trophy className="h-6 w-6 text-yellow-600" />
-                  Victory!
-                </>
-              ) : (
-                <>
-                  <Target className="h-6 w-6 text-red-600" />
-                  Defeat
-                </>
-              )}
-            </CardTitle>
-            <CardDescription>
-              {isDraw
-                ? "Great battle! You're evenly matched."
-                : playerWon
-                  ? "Congratulations! You won the battle!"
-                  : "Good effort! Better luck next time."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Final Scores */}
-            <div className="grid grid-cols-2 gap-6">
-              <div
-                className={`text-center p-4 rounded-lg ${playerWon ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"} border`}
-              >
-                <Avatar className="h-16 w-16 mx-auto mb-2">
-                  <AvatarImage src={playerStats.avatar || "/placeholder.svg"} />
-                  <AvatarFallback>{playerStats.username[0].toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <div className="font-medium mb-2">{playerStats.username}</div>
-                <div className="text-3xl font-bold mb-1">{playerStats.score}</div>
-                <div className="text-sm text-muted-foreground">
-                  {playerStats.accuracy}% accuracy • {playerStats.streak} streak
-                </div>
-              </div>
-
-              <div
-                className={`text-center p-4 rounded-lg ${!playerWon && !isDraw ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"} border`}
-              >
-                <Avatar className="h-16 w-16 mx-auto mb-2">
-                  <AvatarImage src={opponentStats.avatar || "/placeholder.svg"} />
-                  <AvatarFallback>{opponentStats.username[0].toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <div className="font-medium mb-2">{opponentStats.username}</div>
-                <div className="text-3xl font-bold mb-1">{opponentStats.score}</div>
-                <div className="text-sm text-muted-foreground">
-                  {opponentStats.accuracy}% accuracy • {opponentStats.streak} streak
-                </div>
-              </div>
+      <Card className="w-full max-w-2xl mx-auto">
+        <CardHeader className="text-center">
+          <div
+            className={`text-6xl mb-4 ${
+              result === "win" ? "text-green-600" : result === "lose" ? "text-red-600" : "text-yellow-600"
+            }`}
+          >
+            {result === "win" ? "🏆" : result === "lose" ? "😔" : "🤝"}
+          </div>
+          <CardTitle className="text-3xl">
+            {result === "win" ? "Victory!" : result === "lose" ? "Defeat!" : "Tie Game!"}
+          </CardTitle>
+          <CardDescription>
+            {result === "win"
+              ? "Congratulations! You won the battle!"
+              : result === "lose"
+                ? "Better luck next time!"
+                : "Great battle! It's a tie!"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="text-center p-4 bg-blue-50 rounded-lg">
+              <div className="text-2xl font-bold text-blue-600">{battleState.playerScore}</div>
+              <div className="text-sm text-muted-foreground">{user?.username}</div>
             </div>
-
-            {/* Battle Stats */}
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <div className="text-2xl font-bold">{questions.length}</div>
-                <div className="text-sm text-muted-foreground">Questions</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold">{playerStats.answeredQuestions}</div>
-                <div className="text-sm text-muted-foreground">Answered</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold">
-                  {Math.round((playerStats.score / (questions.length * 30)) * 100)}%
-                </div>
-                <div className="text-sm text-muted-foreground">Performance</div>
-              </div>
+            <div className="text-center p-4 bg-red-50 rounded-lg">
+              <div className="text-2xl font-bold text-red-600">{battleState.opponentScore}</div>
+              <div className="text-sm text-muted-foreground">{opponent}</div>
             </div>
+          </div>
 
-            <Button
-              className="w-full"
-              onClick={() => onBattleEnd(playerWon ? "win" : isDraw ? "draw" : "lose", playerStats.score)}
-            >
-              Return to Groups
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span>Questions Answered:</span>
+              <span>
+                {battleState.playerAnswers.filter((a) => a !== null).length}/{mockQuestions.length}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Accuracy:</span>
+              <span>
+                {Math.round(
+                  (battleState.playerAnswers.filter((answer, index) => answer === mockQuestions[index]?.correctAnswer)
+                    .length /
+                    mockQuestions.length) *
+                    100,
+                )}
+                %
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Best Streak:</span>
+              <span>{Math.max(...[battleState.playerStreak, 0])}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 dark:from-gray-900 dark:to-gray-800 p-4">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Battle Header */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-4">
-                <Avatar className="h-12 w-12">
-                  <AvatarImage src={playerStats.avatar || "/placeholder.svg"} />
-                  <AvatarFallback>{playerStats.username[0].toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <div>
-                  <div className="font-medium">{playerStats.username}</div>
-                  <div className="text-sm text-muted-foreground">Score: {playerStats.score}</div>
-                </div>
+    <div className="w-full max-w-4xl mx-auto space-y-6">
+      {/* Battle Header */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-4">
+              <Avatar>
+                <AvatarImage src={user?.avatar || "/placeholder.svg"} />
+                <AvatarFallback>{user?.username[0].toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <div>
+                <div className="font-medium">{user?.username}</div>
+                <div className="text-2xl font-bold text-blue-600">{battleState.playerScore}</div>
               </div>
-
-              <div className="text-center">
-                <div className="text-2xl font-bold text-orange-600">VS</div>
-                <div className="text-sm text-muted-foreground">
-                  Question {currentQuestionIndex + 1} of {questions.length}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <div className="font-medium">{opponentStats.username}</div>
-                  <div className="text-sm text-muted-foreground">Score: {opponentStats.score}</div>
-                </div>
-                <Avatar className="h-12 w-12">
-                  <AvatarImage src={opponentStats.avatar || "/placeholder.svg"} />
-                  <AvatarFallback>{opponentStats.username[0].toUpperCase()}</AvatarFallback>
-                </Avatar>
-              </div>
-            </div>
-
-            <Progress value={progress} className="h-2" />
-          </CardContent>
-        </Card>
-
-        {/* Question Card */}
-        <Card className="min-h-[400px]">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary">{currentQuestion.topic}</Badge>
-                <Badge
-                  variant={
-                    currentQuestion.difficulty === "Easy"
-                      ? "default"
-                      : currentQuestion.difficulty === "Medium"
-                        ? "secondary"
-                        : "destructive"
-                  }
-                >
-                  {currentQuestion.difficulty}
+              {battleState.playerStreak > 0 && (
+                <Badge variant="secondary" className="bg-orange-100 text-orange-800">
+                  <Flame className="h-3 w-3 mr-1" />
+                  {battleState.playerStreak} streak
                 </Badge>
-              </div>
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                <span className={`font-bold ${timeLeft <= 5 ? "text-red-600" : "text-muted-foreground"}`}>
-                  {timeLeft}s
-                </span>
-              </div>
+              )}
             </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
+
             <div className="text-center">
-              <div className="text-xl font-semibold mb-6 p-6 bg-muted/30 rounded-lg border-2 border-dashed">
-                {currentQuestion.question}
+              <div className="text-sm text-muted-foreground">
+                Question {battleState.currentQuestion + 1}/{mockQuestions.length}
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                <Clock className="h-4 w-4" />
+                <span className="font-mono text-lg">{battleState.timeLeft}s</span>
               </div>
             </div>
 
-            <div className="grid gap-3">
-              {currentQuestion.options.map((option, index) => (
+            <div className="flex items-center gap-4">
+              {battleState.opponentStreak > 0 && (
+                <Badge variant="secondary" className="bg-red-100 text-red-800">
+                  <Flame className="h-3 w-3 mr-1" />
+                  {battleState.opponentStreak} streak
+                </Badge>
+              )}
+              <div className="text-right">
+                <div className="font-medium">{opponent}</div>
+                <div className="text-2xl font-bold text-red-600">{battleState.opponentScore}</div>
+              </div>
+              <Avatar>
+                <AvatarImage src="/placeholder.svg?height=40&width=40" />
+                <AvatarFallback>{opponent[0].toUpperCase()}</AvatarFallback>
+              </Avatar>
+            </div>
+          </div>
+
+          <Progress value={(battleState.timeLeft / 15) * 100} className="h-2" />
+        </CardContent>
+      </Card>
+
+      {/* Question Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <Badge
+              variant={
+                currentQuestion.difficulty === "easy"
+                  ? "secondary"
+                  : currentQuestion.difficulty === "medium"
+                    ? "default"
+                    : "destructive"
+              }
+            >
+              {currentQuestion.difficulty.toUpperCase()}
+            </Badge>
+            <Badge variant="outline">{currentQuestion.topic}</Badge>
+          </div>
+          <CardTitle className="text-xl">{currentQuestion.question}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-3">
+            {currentQuestion.options.map((option, index) => {
+              const isSelected = selectedAnswer === index
+              const isCorrect = index === currentQuestion.correctAnswer
+              const showResult = selectedAnswer !== null
+
+              return (
                 <Button
                   key={index}
-                  variant={
-                    showResult
-                      ? index === currentQuestion.correctAnswer
-                        ? "default"
-                        : index === selectedAnswer
-                          ? "destructive"
-                          : "outline"
-                      : selectedAnswer === index
-                        ? "default"
-                        : "outline"
-                  }
-                  className={`p-4 h-auto text-left justify-start ${
-                    showResult && index === currentQuestion.correctAnswer
-                      ? "bg-green-600 hover:bg-green-700"
-                      : showResult && index === selectedAnswer && index !== currentQuestion.correctAnswer
-                        ? "bg-red-600 hover:bg-red-700"
-                        : ""
+                  variant={showResult ? (isCorrect ? "default" : isSelected ? "destructive" : "outline") : "outline"}
+                  className={`justify-start h-auto p-4 text-left ${
+                    showResult && isCorrect ? "bg-green-600 hover:bg-green-700" : ""
                   }`}
-                  onClick={() => !showResult && handleAnswer(index)}
-                  disabled={showResult}
+                  onClick={() => handleAnswerSelect(index)}
+                  disabled={selectedAnswer !== null}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-sm font-bold">
+                  <div className="flex items-center gap-3 w-full">
+                    <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center text-sm font-medium">
                       {String.fromCharCode(65 + index)}
                     </div>
-                    <span>{option}</span>
-                    {showResult && index === currentQuestion.correctAnswer && (
-                      <CheckCircle className="h-4 w-4 ml-auto" />
-                    )}
-                    {showResult && index === selectedAnswer && index !== currentQuestion.correctAnswer && (
-                      <XCircle className="h-4 w-4 ml-auto" />
-                    )}
+                    <span className="flex-1">{option}</span>
+                    {showResult && isCorrect && <CheckCircle className="h-5 w-5" />}
+                    {showResult && isSelected && !isCorrect && <XCircle className="h-5 w-5" />}
                   </div>
                 </Button>
-              ))}
-            </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
-            {showResult && (
-              <div className="text-center p-4 bg-muted rounded-lg">
-                <div className="font-medium mb-2">
-                  {selectedAnswer === currentQuestion.correctAnswer ? (
-                    <span className="text-green-600">
-                      Correct! +{getQuestionPoints(currentQuestion.difficulty)} points
-                    </span>
-                  ) : selectedAnswer === null ? (
-                    <span className="text-yellow-600">Time's up!</span>
-                  ) : (
-                    <span className="text-red-600">Incorrect!</span>
-                  )}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {currentQuestionIndex < questions.length - 1 ? "Next question in 2 seconds..." : "Battle complete!"}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Live Stats */}
-        <div className="grid grid-cols-2 gap-4">
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Fire className="h-4 w-4 text-orange-600" />
-                <span className="font-medium">Your Stats</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div>
-                  <div className="text-lg font-bold">{playerStats.streak}</div>
-                  <div className="text-xs text-muted-foreground">Streak</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold">{playerStats.accuracy}%</div>
-                  <div className="text-xs text-muted-foreground">Accuracy</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold">{playerStats.score}</div>
-                  <div className="text-xs text-muted-foreground">Score</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Shield className="h-4 w-4 text-blue-600" />
-                <span className="font-medium">Opponent Stats</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div>
-                  <div className="text-lg font-bold">{opponentStats.streak}</div>
-                  <div className="text-xs text-muted-foreground">Streak</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold">{opponentStats.accuracy}%</div>
-                  <div className="text-xs text-muted-foreground">Accuracy</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold">{opponentStats.score}</div>
-                  <div className="text-xs text-muted-foreground">Score</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      {/* Progress Indicator */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">Battle Progress</span>
+            <span className="text-sm text-muted-foreground">
+              {battleState.currentQuestion + 1} of {mockQuestions.length}
+            </span>
+          </div>
+          <Progress value={((battleState.currentQuestion + 1) / mockQuestions.length) * 100} />
+        </CardContent>
+      </Card>
     </div>
   )
 }

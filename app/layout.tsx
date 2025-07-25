@@ -7,8 +7,8 @@ import { AuthProvider } from "@/components/auth-provider"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "LearnCards - Flashcard Learning App",
-  description: "A comprehensive flashcard-based self-learning app with analytics and progress tracking",
+  title: "LearnCards - Smart Flashcard Learning",
+  description: "Transform your presentations into interactive flashcards and compete with friends",
     generator: 'v0.dev'
 }
 

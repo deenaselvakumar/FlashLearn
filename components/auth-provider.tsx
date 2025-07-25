@@ -13,14 +13,15 @@ interface User {
     averageAccuracy: number
     studyStreak: number
     totalCards: number
+    weakTopics: string[]
   }
 }
 
 interface AuthContextType {
   user: User | null
   login: (username: string, password: string) => Promise<boolean>
-  logout: () => void
   register: (username: string, email: string, password: string) => Promise<boolean>
+  logout: () => void
   isLoading: boolean
 }
 
@@ -36,10 +37,11 @@ const mockUsers: Record<string, { password: string; user: User }> = {
       email: "alex@example.com",
       avatar: "/placeholder.svg?height=40&width=40",
       stats: {
-        totalSessions: 25,
+        totalSessions: 45,
         averageAccuracy: 78,
         studyStreak: 7,
         totalCards: 450,
+        weakTopics: ["Calculus", "Physics"],
       },
     },
   },
@@ -51,10 +53,11 @@ const mockUsers: Record<string, { password: string; user: User }> = {
       email: "sarah@example.com",
       avatar: "/placeholder.svg?height=40&width=40",
       stats: {
-        totalSessions: 18,
+        totalSessions: 32,
         averageAccuracy: 85,
         studyStreak: 12,
         totalCards: 320,
+        weakTopics: ["Chemistry", "Biology"],
       },
     },
   },
@@ -66,10 +69,27 @@ const mockUsers: Record<string, { password: string; user: User }> = {
       email: "mike@example.com",
       avatar: "/placeholder.svg?height=40&width=40",
       stats: {
-        totalSessions: 32,
+        totalSessions: 58,
         averageAccuracy: 72,
         studyStreak: 5,
         totalCards: 580,
+        weakTopics: ["Mathematics", "Statistics"],
+      },
+    },
+  },
+  emma_wilson: {
+    password: "password123",
+    user: {
+      id: "user_4",
+      username: "emma_wilson",
+      email: "emma@example.com",
+      avatar: "/placeholder.svg?height=40&width=40",
+      stats: {
+        totalSessions: 28,
+        averageAccuracy: 91,
+        studyStreak: 8,
+        totalCards: 280,
+        weakTopics: ["History", "Literature"],
       },
     },
   },
@@ -81,9 +101,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Check for stored user session
-    const storedUser = localStorage.getItem("currentUser")
+    const storedUser = localStorage.getItem("flashcard_user")
     if (storedUser) {
-      setUser(JSON.parse(storedUser))
+      try {
+        setUser(JSON.parse(storedUser))
+      } catch (error) {
+        console.error("Error parsing stored user:", error)
+        localStorage.removeItem("flashcard_user")
+      }
     }
     setIsLoading(false)
   }, [])
@@ -94,10 +119,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Simulate API call delay
     await new Promise((resolve) => setTimeout(resolve, 1000))
 
-    const userData = mockUsers[username]
-    if (userData && userData.password === password) {
-      setUser(userData.user)
-      localStorage.setItem("currentUser", JSON.stringify(userData.user))
+    const userRecord = mockUsers[username]
+    if (userRecord && userRecord.password === password) {
+      setUser(userRecord.user)
+      localStorage.setItem("flashcard_user", JSON.stringify(userRecord.user))
       setIsLoading(false)
       return true
     }
@@ -112,11 +137,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Simulate API call delay
     await new Promise((resolve) => setTimeout(resolve, 1000))
 
+    // Check if username already exists
     if (mockUsers[username]) {
       setIsLoading(false)
-      return false // Username already exists
+      return false
     }
 
+    // Create new user
     const newUser: User = {
       id: `user_${Date.now()}`,
       username,
@@ -127,22 +154,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         averageAccuracy: 0,
         studyStreak: 0,
         totalCards: 0,
+        weakTopics: [],
       },
     }
 
-    mockUsers[username] = { password, user: newUser }
+    mockUsers[username] = {
+      password,
+      user: newUser,
+    }
+
     setUser(newUser)
-    localStorage.setItem("currentUser", JSON.stringify(newUser))
+    localStorage.setItem("flashcard_user", JSON.stringify(newUser))
     setIsLoading(false)
     return true
   }
 
   const logout = () => {
     setUser(null)
-    localStorage.removeItem("currentUser")
+    localStorage.removeItem("flashcard_user")
   }
 
-  return <AuthContext.Provider value={{ user, login, logout, register, isLoading }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, login, register, logout, isLoading }}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {
