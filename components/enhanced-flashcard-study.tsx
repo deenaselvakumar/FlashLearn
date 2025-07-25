@@ -59,9 +59,33 @@ export function EnhancedFlashcardStudy({ flashcards, onExit }: EnhancedFlashcard
   const [sessionStartTime] = useState<number>(Date.now())
   const [isComplete, setIsComplete] = useState(false)
   const [hintsUsed, setHintsUsed] = useState(0)
+  const [isFlipping, setIsFlipping] = useState(false)
+  const [flipDirection, setFlipDirection] = useState<"left" | "right">("right")
 
-  const currentCard = flashcards[currentIndex]
-  const progress = ((currentIndex + 1) / flashcards.length) * 100
+  // Filter out intro/content slides
+  const filteredFlashcards = flashcards.filter((card) => {
+    const question = card.question.toLowerCase()
+    const answer = card.answer.toLowerCase()
+
+    const skipKeywords = [
+      "introduction",
+      "overview",
+      "agenda",
+      "outline",
+      "table of contents",
+      "welcome",
+      "getting started",
+      "about this",
+      "course overview",
+    ]
+
+    return (
+      !skipKeywords.some((keyword) => question.includes(keyword) || answer.includes(keyword)) && card.slideSource > 1
+    )
+  })
+
+  const currentCard = filteredFlashcards[currentIndex]
+  const progress = ((currentIndex + 1) / filteredFlashcards.length) * 100
 
   useEffect(() => {
     setStartTime(Date.now())
@@ -70,6 +94,14 @@ export function EnhancedFlashcardStudy({ flashcards, onExit }: EnhancedFlashcard
     setShowHints(false)
     setHintsUsed(0)
   }, [currentIndex])
+
+  const handleFlip = () => {
+    setIsFlipping(true)
+    setTimeout(() => {
+      setShowAnswer(!showAnswer)
+      setIsFlipping(false)
+    }, 150)
+  }
 
   const handleResponse = (response: "correct" | "incorrect" | "review") => {
     const timeSpent = Date.now() - startTime
@@ -113,7 +145,8 @@ export function EnhancedFlashcardStudy({ flashcards, onExit }: EnhancedFlashcard
     // Auto-advance after a short delay
     setTimeout(
       () => {
-        if (currentIndex < flashcards.length - 1) {
+        if (currentIndex < filteredFlashcards.length - 1) {
+          setFlipDirection("right")
           setCurrentIndex(currentIndex + 1)
         } else {
           setIsComplete(true)
@@ -124,14 +157,24 @@ export function EnhancedFlashcardStudy({ flashcards, onExit }: EnhancedFlashcard
   }
 
   const nextCard = () => {
-    if (currentIndex < flashcards.length - 1) {
-      setCurrentIndex(currentIndex + 1)
+    if (currentIndex < filteredFlashcards.length - 1) {
+      setFlipDirection("right")
+      setIsFlipping(true)
+      setTimeout(() => {
+        setCurrentIndex(currentIndex + 1)
+        setIsFlipping(false)
+      }, 150)
     }
   }
 
   const prevCard = () => {
     if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1)
+      setFlipDirection("left")
+      setIsFlipping(true)
+      setTimeout(() => {
+        setCurrentIndex(currentIndex - 1)
+        setIsFlipping(false)
+      }, 150)
     }
   }
 
@@ -245,7 +288,7 @@ export function EnhancedFlashcardStudy({ flashcards, onExit }: EnhancedFlashcard
                 setStudySession([])
                 setIsComplete(false)
               }}
-              className="flex-1 bg-orange-600 hover:bg-orange-700"
+              className="flex-1 bg-purple-600 hover:bg-purple-700"
             >
               <RotateCcw className="mr-2 h-4 w-4" />
               Study Again
@@ -256,12 +299,29 @@ export function EnhancedFlashcardStudy({ flashcards, onExit }: EnhancedFlashcard
     )
   }
 
+  if (!currentCard) {
+    return (
+      <Card className="max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle>No Flashcards Available</CardTitle>
+          <CardDescription>No valid flashcards found after filtering intro slides.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={onExit} variant="outline">
+            <Home className="mr-2 h-4 w-4" />
+            Back to Editor
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Enhanced Study Mode</h1>
+          <h1 className="text-2xl font-bold">FlashLearn Enhanced Study Mode</h1>
           <p className="text-muted-foreground">Interactive learning with hints and explanations</p>
         </div>
         <Button onClick={onExit} variant="outline">
@@ -276,148 +336,167 @@ export function EnhancedFlashcardStudy({ flashcards, onExit }: EnhancedFlashcard
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium">Progress</span>
             <span className="text-sm text-muted-foreground">
-              {currentIndex + 1} of {flashcards.length}
+              {currentIndex + 1} of {filteredFlashcards.length}
             </span>
           </div>
           <Progress value={progress} className="h-2" />
         </CardContent>
       </Card>
 
-      {/* Enhanced Flashcard */}
-      <Card className="min-h-[600px]">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">Slide {currentCard.slideSource}</Badge>
-              <Badge variant="secondary">{currentCard.topic}</Badge>
-              <Badge
-                variant={
-                  currentCard.difficulty === "Easy"
-                    ? "default"
-                    : currentCard.difficulty === "Medium"
-                      ? "secondary"
-                      : "destructive"
-                }
-              >
-                {currentCard.difficulty}
-              </Badge>
-              <Badge variant="outline">{currentCard.type}</Badge>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => speakText(showAnswer ? currentCard.answer : currentCard.question)}
-              >
-                <Volume2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="text-center space-y-6">
-            <div className="text-lg font-medium text-muted-foreground">{showAnswer ? "Answer" : "Question"}</div>
-            <div className="text-xl font-semibold min-h-[150px] flex items-center justify-center p-8 bg-muted/30 rounded-lg border-2 border-dashed">
-              {showAnswer ? currentCard.answer : currentCard.question}
-            </div>
-          </div>
-
-          {/* Hints Section */}
-          {!showAnswer && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Need help?</span>
-                <Button variant="outline" size="sm" onClick={showHint} disabled={showHints}>
-                  <Lightbulb className="mr-2 h-4 w-4" />
-                  {showHints ? "Hints Shown" : "Show Hints"}
+      {/* Enhanced Animated Flashcard */}
+      <div className="perspective-1000">
+        <Card
+          className={`min-h-[600px] transition-all duration-300 transform-style-preserve-3d cursor-pointer ${
+            isFlipping ? (flipDirection === "right" ? "rotate-y-180" : "-rotate-y-180") : ""
+          }`}
+          onClick={handleFlip}
+        >
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">Slide {currentCard.slideSource}</Badge>
+                <Badge variant="secondary">{currentCard.topic}</Badge>
+                <Badge
+                  variant={
+                    currentCard.difficulty === "Easy"
+                      ? "default"
+                      : currentCard.difficulty === "Medium"
+                        ? "secondary"
+                        : "destructive"
+                  }
+                >
+                  {currentCard.difficulty}
+                </Badge>
+                <Badge variant="outline">{currentCard.type}</Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    speakText(showAnswer ? currentCard.answer : currentCard.question)
+                  }}
+                >
+                  <Volume2 className="h-4 w-4" />
                 </Button>
               </div>
-
-              {showHints && (
-                <Card className="bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800">
-                  <CardContent className="pt-4">
-                    <div className="space-y-2">
-                      {currentCard.hints.map((hint, index) => (
-                        <div key={index} className="flex items-start gap-2">
-                          <span className="text-blue-600 font-bold">💡</span>
-                          <span className="text-sm">{hint}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
             </div>
-          )}
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="text-center space-y-6">
+              <div className="text-lg font-medium text-muted-foreground">{showAnswer ? "Answer" : "Question"}</div>
+              <div className="text-xl font-semibold min-h-[150px] flex items-center justify-center p-8 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-950 dark:to-blue-950 rounded-lg border-2 border-dashed border-purple-200 dark:border-purple-800">
+                {showAnswer ? currentCard.answer : currentCard.question}
+              </div>
+              <div className="text-sm text-muted-foreground">Click card to flip • Use navigation buttons to move</div>
+            </div>
 
-          {/* Explanation Section (shown after wrong answer) */}
-          {showExplanation && (
-            <Card className="bg-orange-50 border-orange-200 dark:bg-orange-950 dark:border-orange-800">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Brain className="h-5 w-5 text-orange-600" />
-                  Detailed Explanation
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="text-sm leading-relaxed">{currentCard.explanation}</div>
+            {/* Hints Section */}
+            {!showAnswer && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Need help?</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      showHint()
+                    }}
+                    disabled={showHints}
+                  >
+                    <Lightbulb className="mr-2 h-4 w-4" />
+                    {showHints ? "Hints Shown" : "Show Hints"}
+                  </Button>
+                </div>
 
-                {currentCard.commonMistakes.length > 0 && (
-                  <div>
-                    <div className="font-medium text-sm mb-2">Common Mistakes:</div>
-                    <ul className="text-sm space-y-1">
-                      {currentCard.commonMistakes.map((mistake, index) => (
-                        <li key={index} className="flex items-start gap-2">
-                          <span className="text-red-500">⚠️</span>
-                          <span>{mistake}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                {showHints && (
+                  <Card className="bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800">
+                    <CardContent className="pt-4">
+                      <div className="space-y-2">
+                        {currentCard.hints.map((hint, index) => (
+                          <div key={index} className="flex items-start gap-2">
+                            <span className="text-blue-600 font-bold">💡</span>
+                            <span className="text-sm">{hint}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
                 )}
-
-                {currentCard.relatedConcepts.length > 0 && (
-                  <div>
-                    <div className="font-medium text-sm mb-2">Related Concepts:</div>
-                    <div className="flex flex-wrap gap-2">
-                      {currentCard.relatedConcepts.map((concept) => (
-                        <Badge key={concept} variant="outline" className="text-xs">
-                          {concept}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Action Buttons */}
-          <div className="flex justify-center">
-            {!showAnswer ? (
-              <Button onClick={() => setShowAnswer(true)} size="lg" className="bg-orange-600 hover:bg-orange-700">
-                <Eye className="mr-2 h-4 w-4" />
-                Show Answer
-              </Button>
-            ) : (
-              <div className="flex gap-3 w-full max-w-md">
-                <Button variant="destructive" onClick={() => handleResponse("incorrect")} className="flex-1">
-                  <X className="mr-2 h-4 w-4" />
-                  Incorrect
-                </Button>
-                <Button variant="outline" onClick={() => handleResponse("review")} className="flex-1">
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  Review
-                </Button>
-                <Button onClick={() => handleResponse("correct")} className="flex-1 bg-green-600 hover:bg-green-700">
-                  <Check className="mr-2 h-4 w-4" />
-                  Correct
-                </Button>
               </div>
             )}
-          </div>
-        </CardContent>
-      </Card>
+
+            {/* Explanation Section (shown after wrong answer) */}
+            {showExplanation && (
+              <Card className="bg-purple-50 border-purple-200 dark:bg-purple-950 dark:border-purple-800">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Brain className="h-5 w-5 text-purple-600" />
+                    Detailed Explanation
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="text-sm leading-relaxed">{currentCard.explanation}</div>
+
+                  {currentCard.commonMistakes.length > 0 && (
+                    <div>
+                      <div className="font-medium text-sm mb-2">Common Mistakes:</div>
+                      <ul className="text-sm space-y-1">
+                        {currentCard.commonMistakes.map((mistake, index) => (
+                          <li key={index} className="flex items-start gap-2">
+                            <span className="text-red-500">⚠️</span>
+                            <span>{mistake}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {currentCard.relatedConcepts.length > 0 && (
+                    <div>
+                      <div className="font-medium text-sm mb-2">Related Concepts:</div>
+                      <div className="flex flex-wrap gap-2">
+                        {currentCard.relatedConcepts.map((concept) => (
+                          <Badge key={concept} variant="outline" className="text-xs">
+                            {concept}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex justify-center">
+              {!showAnswer ? (
+                <Button onClick={handleFlip} size="lg" className="bg-purple-600 hover:bg-purple-700">
+                  <Eye className="mr-2 h-4 w-4" />
+                  Show Answer
+                </Button>
+              ) : (
+                <div className="flex gap-3 w-full max-w-md">
+                  <Button variant="destructive" onClick={() => handleResponse("incorrect")} className="flex-1">
+                    <X className="mr-2 h-4 w-4" />
+                    Incorrect
+                  </Button>
+                  <Button variant="outline" onClick={() => handleResponse("review")} className="flex-1">
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Review
+                  </Button>
+                  <Button onClick={() => handleResponse("correct")} className="flex-1 bg-green-600 hover:bg-green-700">
+                    <Check className="mr-2 h-4 w-4" />
+                    Correct
+                  </Button>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Navigation */}
       <div className="flex justify-between">
@@ -425,7 +504,7 @@ export function EnhancedFlashcardStudy({ flashcards, onExit }: EnhancedFlashcard
           <ArrowLeft className="mr-2 h-4 w-4" />
           Previous
         </Button>
-        <Button variant="outline" onClick={nextCard} disabled={currentIndex === flashcards.length - 1}>
+        <Button variant="outline" onClick={nextCard} disabled={currentIndex === filteredFlashcards.length - 1}>
           Next
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
